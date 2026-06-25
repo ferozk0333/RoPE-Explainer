@@ -1,0 +1,881 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RoPE: The Positional Encoding That Actually Makes Sense</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400;0,600;1,400&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
+
+:root {
+  --ink: #1a1a1a;
+  --ink-soft: #4a4a4a;
+  --ink-muted: #8a8a8a;
+  --paper: #ffffff;
+  --paper-warm: #f7f6f3;
+  --accent: #c0392b;
+  --accent-soft: #f5e8e6;
+  --blue: #2c5f8a;
+  --blue-soft: #e4eef7;
+  --green: #2d6a4f;
+  --green-soft: #e3f2eb;
+  --border: #e8e5e0;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  background: var(--paper);
+  color: var(--ink);
+  font-family: 'Lora', Georgia, serif;
+  font-size: 18px;
+  line-height: 1.8;
+  -webkit-font-smoothing: antialiased;
+}
+
+.top-bar {
+  border-bottom: 1px solid var(--border);
+  padding: 13px 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  background: #fff;
+}
+.top-bar span {
+  font-family: 'Inter', sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+}
+.top-bar .dot { color: var(--border); font-size: 14px; line-height: 1; }
+
+.hero {
+  max-width: 740px;
+  margin: 64px auto 0;
+  padding: 0 32px 52px;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+}
+
+h1 {
+  font-family: 'Lora', serif;
+  font-size: clamp(32px, 5vw, 54px);
+  font-weight: 600;
+  line-height: 1.15;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+  margin-bottom: 22px;
+}
+
+.subtitle {
+  font-size: 20px;
+  font-style: italic;
+  color: var(--ink-soft);
+  line-height: 1.55;
+  margin-bottom: 32px;
+  padding: 0 12px;
+}
+
+.byline {
+  font-family: 'Inter', sans-serif;
+  font-size: 13px;
+  color: var(--ink-muted);
+  display: flex;
+  gap: 18px;
+}
+.byline strong { color: var(--ink-soft); font-weight: 500; }
+
+.content {
+  max-width: 740px;
+  margin: 0 auto;
+  padding: 0 32px 110px;
+}
+
+p { margin-bottom: 22px; }
+strong { font-weight: 600; }
+em { font-style: italic; }
+
+code {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 13.5px;
+  background: var(--paper-warm);
+  border: 1px solid var(--border);
+  padding: 2px 6px;
+  border-radius: 4px;
+  color: var(--accent);
+}
+
+pre {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 13px;
+  background: #1e1e1e;
+  color: #d4d4d4;
+  padding: 24px 28px;
+  border-radius: 8px;
+  overflow-x: auto;
+  line-height: 1.75;
+  margin: 28px 0;
+}
+pre .cm { color: #6a9955; font-style: italic; }
+pre .hl { color: #4ec9b0; }
+
+h2 {
+  font-family: 'Lora', serif;
+  font-size: 28px;
+  font-weight: 600;
+  color: var(--ink);
+  margin: 60px 0 18px;
+  line-height: 1.28;
+}
+
+h3 {
+  font-family: 'Inter', sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+  margin: 48px 0 14px;
+}
+
+.callout {
+  background: var(--accent-soft);
+  border-left: 3px solid var(--accent);
+  padding: 18px 22px;
+  border-radius: 0 6px 6px 0;
+  margin: 32px 0;
+  font-style: italic;
+  font-size: 17px;
+  color: var(--ink-soft);
+}
+.callout strong { font-style: normal; color: var(--accent); }
+
+.pull {
+  font-family: 'Lora', serif;
+  font-size: clamp(20px, 3vw, 25px);
+  font-style: italic;
+  color: var(--ink-soft);
+  text-align: center;
+  padding: 44px 16px;
+  margin: 52px 0;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  line-height: 1.5;
+}
+.pull em { color: var(--accent); font-style: normal; }
+
+.viz {
+  margin: 44px -32px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+  background: #fff;
+}
+.viz-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 13px 22px;
+  border-bottom: 1px solid var(--border);
+  background: var(--paper-warm);
+}
+.viz-num {
+  font-family: 'Inter', sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--accent);
+  letter-spacing: 0.06em;
+}
+.viz-title {
+  font-family: 'Inter', sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+}
+.viz-body { padding: 26px 24px 22px; }
+.viz-note {
+  font-family: 'Inter', sans-serif;
+  font-size: 12px;
+  color: var(--ink-muted);
+  line-height: 1.55;
+  margin-bottom: 16px;
+}
+
+.ctrl-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 10px 0;
+  font-family: 'Inter', sans-serif;
+  font-size: 13px;
+  color: var(--ink-soft);
+}
+.ctrl-row label { min-width: 100px; font-weight: 500; }
+.ctrl-row input[type=range] { flex: 1; accent-color: var(--accent); cursor: pointer; }
+.ctrl-val {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  min-width: 46px;
+  color: var(--accent);
+  font-weight: 500;
+  text-align: right;
+}
+
+.chip-row { display: flex; gap: 7px; flex-wrap: wrap; margin: 12px 0; }
+.chip {
+  font-family: 'Inter', sans-serif;
+  font-size: 12px;
+  font-weight: 500;
+  padding: 5px 13px;
+  border-radius: 5px;
+  border: 1.5px solid;
+  cursor: pointer;
+  transition: all 0.12s;
+  user-select: none;
+}
+.chip:hover { opacity: 0.75; }
+.chip.active { box-shadow: 0 2px 8px rgba(0,0,0,0.13); }
+
+.stat-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 14px; }
+.stat-card {
+  background: var(--paper-warm);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  padding: 13px 15px;
+}
+.stat-label { font-family: 'Inter', sans-serif; font-size: 10px; color: var(--ink-muted); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 4px; }
+.stat-val { font-family: 'JetBrains Mono', monospace; font-size: 20px; font-weight: 500; color: var(--ink); }
+.stat-sub { font-family: 'Inter', sans-serif; font-size: 11px; color: var(--ink-muted); margin-top: 3px; }
+
+canvas { display: block; width: 100%; }
+
+.compare {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1px;
+  background: var(--border);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  margin: 28px 0;
+}
+.cmp-col { background: #fff; }
+.cmp-head {
+  padding: 13px 18px;
+  font-family: 'Inter', sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.cmp-body {
+  padding: 10px 18px 18px;
+  font-family: 'Inter', sans-serif;
+  font-size: 13px;
+  color: var(--ink-soft);
+  line-height: 1.7;
+}
+.cmp-body li { margin-left: 16px; margin-bottom: 6px; }
+
+.refs {
+  margin-top: 80px;
+  padding-top: 32px;
+  border-top: 1px solid var(--border);
+}
+.refs-heading {
+  font-family: 'Lora', serif;
+  font-size: 20px;
+  font-style: italic;
+  font-weight: 400;
+  color: var(--ink-soft);
+  margin-bottom: 20px;
+}
+.refs ol { margin-left: 18px; }
+.refs li {
+  font-family: 'Inter', sans-serif;
+  font-size: 13px;
+  color: var(--ink-soft);
+  line-height: 1.7;
+  margin-bottom: 12px;
+}
+.refs a { color: var(--blue); text-decoration: none; border-bottom: 1px solid var(--blue-soft); }
+.refs a:hover { border-bottom-color: var(--blue); }
+
+.outro {
+  background: var(--paper-warm);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 26px 30px;
+  margin: 52px 0 0;
+}
+.outro p { font-size: 16px; margin-bottom: 12px; }
+.outro p:last-child { margin-bottom: 0; }
+
+@media (max-width: 600px) {
+  .top-bar { padding: 12px 20px; flex-wrap: wrap; gap: 8px; }
+  .hero { padding: 0 20px 40px; }
+  .content { padding: 0 20px 80px; }
+  .viz { margin: 36px -20px; border-radius: 0; }
+  .viz-body { padding: 18px; }
+  .compare { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+
+<div class="top-bar">
+  <span>Data Science Collective</span>
+  <span class="dot">&middot;</span>
+  <span>Feroz Khan</span>
+  <span class="dot">&middot;</span>
+  <span>June 2026</span>
+  <span class="dot">&middot;</span>
+  <span>15 min read</span>
+</div>
+
+<div class="hero">
+  <h1>RoPE: The Positional Encoding That Actually Makes Sense</h1>
+  <p class="subtitle">How modern LLMs encode the position of each word in a sequence, and why the old approach was always a workaround.</p>
+  <div class="byline">
+    <strong>Feroz Khan</strong>
+    <span>ML Engineer, Seattle</span>
+  </div>
+</div>
+
+<div class="content">
+
+<p style="margin-top:48px">In this article, I want to build a clear intuition for how modern language models like LLaMA, Mistral, and Gemma encode the position of words in a sentence. The technique they all use is called Rotary Positional Embedding, or RoPE. When I was learning about this topic, I found a lot of mathematical write-ups but very few that focused on the "why" before the "how." That gap is my motivation for writing this.</p>
+
+<p>We will start with the problem RoPE is solving, then build a geometric picture, and only then look at the math. By that point the formulas should feel like a natural consequence rather than something handed down from a paper.</p>
+
+<p>One thing worth noting upfront: in RoPE, <strong>only the Query (Q) and Key (K) vectors are rotated</strong>. The Value (V) vector is left alone. The reason will make sense once we get to how attention works.</p>
+
+<h2>Why word order is a problem for transformers</h2>
+
+<p>Try this: "The dog chased the cat" vs. "The cat chased the dog." Same words, completely different meaning. Order is everything.</p>
+
+<p>A transformer processes tokens using attention. And raw attention has no concept of order. It looks at a bag of vectors and computes how each one relates to every other. Shuffle the tokens and the scores do not change. So every transformer has to inject order information somehow, and the question of <em>how</em> turns out to matter quite a bit.</p>
+
+<canvas id="attnStaticCanvas" height="140" style="display:block;width:100%;margin:24px 0"></canvas>
+
+<h3>The original answer: add a position signal</h3>
+
+<p>The "Attention Is All You Need" paper used fixed sinusoidal signals. For each position in the sequence, a vector is computed using sine and cosine waves at different frequencies, then added directly to the word embedding:</p>
+
+<pre>embedding = word_vector + position_signal(m)</pre>
+
+<p>So "cat" at position 1 and "cat" at position 5 become two different vectors. Meaning and position are baked into the same blob. The model then has to figure out how to pull them apart during training. This works, but it creates two problems. First, the model wastes capacity learning to untangle something that did not need to be tangled. Second, if you train on sequences up to 2048 tokens, position 4000 looks completely foreign at inference time. The model has never seen those sinusoidal values before.</p>
+
+<p>Learned positional embeddings (used in early BERT and GPT-2) have the same issue, just with a trainable lookup table instead of a formula.</p>
+
+<div class="callout">
+  <strong>The real problem with additive PE:</strong> it mixes what a word means with where it appears into a single vector. The model cannot cleanly separate the two. RoPE keeps them separate from the start.
+</div>
+
+<h2>What RoPE does differently</h2>
+
+<p>The RoPE authors (Su et al., 2021) asked a different question. Instead of "how do we add position to an embedding," they asked: what property do we actually want attention scores to have with respect to position?</p>
+
+<p>Think about it from first principles. When computing attention between a query at position <em>m</em> and a key at position <em>n</em>, the score should depend on what the words mean and how far apart they are. "cat" near "chased" should score differently than "cat" fifty tokens away from "chased." The thing that matters is the <strong>gap between positions</strong>, not the absolute positions themselves.</p>
+
+<p>So the property we want is simple: the attention score between any two tokens should depend only on <code>(m - n)</code>. RoPE delivers this as a direct consequence of the math, not something the model has to learn.</p>
+
+<div style="background:var(--paper-warm);border:1px solid var(--border);border-radius:8px;padding:20px 24px;margin:28px 0;font-family:'Inter',sans-serif;">
+  <div style="font-size:11px;font-weight:600;letter-spacing:0.1em;text-transform:uppercase;color:var(--ink-muted);margin-bottom:14px">Example sentence used throughout this article</div>
+  <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:flex-end">
+    <div style="text-align:center"><div style="font-size:10px;color:var(--ink-muted);margin-bottom:4px">pos 0</div><div style="font-size:17px;font-weight:500;color:#4a4640;background:#f0ede8;padding:8px 14px;border-radius:5px;border:1px solid var(--border)">The</div></div>
+    <div style="text-align:center"><div style="font-size:10px;color:var(--ink-muted);margin-bottom:4px">pos 1</div><div style="font-size:17px;font-weight:500;color:#2c5f8a;background:#eef4fa;padding:8px 14px;border-radius:5px;border:1px solid #d0e4f4">dog</div></div>
+    <div style="text-align:center"><div style="font-size:10px;color:var(--ink-muted);margin-bottom:4px">pos 2</div><div style="font-size:17px;font-weight:500;color:#2d6a4f;background:#eef7f1;padding:8px 14px;border-radius:5px;border:1px solid #c8e8d4">chased</div></div>
+    <div style="text-align:center"><div style="font-size:10px;color:var(--ink-muted);margin-bottom:4px">pos 3</div><div style="font-size:17px;font-weight:500;color:#4a4640;background:#f0ede8;padding:8px 14px;border-radius:5px;border:1px solid var(--border)">the</div></div>
+    <div style="text-align:center"><div style="font-size:10px;color:var(--ink-muted);margin-bottom:4px">pos 4</div><div style="font-size:17px;font-weight:500;color:#c0392b;background:#fdf3f2;padding:8px 14px;border-radius:5px;border:1px solid #f0c8c4">cat</div></div>
+    <div style="text-align:center"><div style="font-size:10px;color:var(--ink-muted);margin-bottom:4px">pos 5</div><div style="font-size:17px;font-weight:500;color:#7b4fa2;background:#f4eefa;padding:8px 14px;border-radius:5px;border:1px solid #ddd0f0">very</div></div>
+    <div style="text-align:center"><div style="font-size:10px;color:var(--ink-muted);margin-bottom:4px">pos 6</div><div style="font-size:17px;font-weight:500;color:#7a5c2e;background:#fdf5e8;padding:8px 14px;border-radius:5px;border:1px solid #f0ddb8">quickly</div></div>
+  </div>
+  <div style="margin-top:12px;font-size:12px;color:var(--ink-muted)">Each word occupies a fixed position slot. RoPE uses these position numbers to rotate the word's embedding vector.</div>
+</div>
+
+<h2>The geometric intuition</h2>
+
+<p>Every word embedding is a vector. Vectors have two properties: <strong>length</strong> (magnitude) and <strong>direction</strong> (the angle it points). RoPE uses both of these deliberately, and this is the key insight of the whole approach.</p>
+
+<p><strong>Length carries meaning.</strong> How large the vector is captures semantic strength. "king" and "queen" might have long vectors; "the" might have a shorter one. This does not change with position.</p>
+
+<p><strong>Direction carries position.</strong> RoPE rotates each vector by an angle proportional to where it sits in the sequence. Position 0 gets no rotation. Position 1 gets a small rotation. Position 50 gets a larger one.</p>
+
+<p>Rotation is length-preserving by definition. Rotating a clock hand does not make it longer or shorter, it just points somewhere new. So "cat" at position 1 and "cat" at position 8 have vectors that are identical in length but point in different directions. Same word, different orientation in space.</p>
+
+<div class="viz">
+  <div class="viz-head">
+    <span class="viz-num">FIG. 1</span>
+    <span class="viz-title">Rotation Explorer: same word, different position</span>
+  </div>
+  <div class="viz-body">
+    <p class="viz-note">Pick a word and drag the position slider. Gray arrow is the original embedding. Colored arrow is after RoPE rotation. The length stays the same at every position, only the direction changes.</p>
+    <div class="chip-row" id="wordPicker">
+      <div class="chip active" data-word="cat" style="border-color:#c0392b;color:#c0392b;background:#fdf3f2">cat</div>
+      <div class="chip" data-word="dog" style="border-color:#2c5f8a;color:#2c5f8a;background:#eef4fa">dog</div>
+      <div class="chip" data-word="chased" style="border-color:#2d6a4f;color:#2d6a4f;background:#eef7f1">chased</div>
+      <div class="chip" data-word="quickly" style="border-color:#7b4fa2;color:#7b4fa2;background:#f4eefa">quickly</div>
+    </div>
+    <div class="ctrl-row">
+      <label>Position m</label>
+      <input type="range" id="posSlider" min="0" max="14" value="0" step="1">
+      <span class="ctrl-val" id="posVal">0</span>
+    </div>
+    <canvas id="rotCanvas" height="220"></canvas>
+    <div class="stat-row">
+      <div class="stat-card">
+        <div class="stat-label">Rotation angle</div>
+        <div class="stat-val" id="rotAngle">0.0&deg;</div>
+        <div class="stat-sub">= &theta; &times; position</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Vector length</div>
+        <div class="stat-val" id="vecLen">1.000</div>
+        <div class="stat-sub">unchanged by rotation</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<p>This separation is what makes RoPE work. The semantic content of a word lives in the length of its vector. The position lives in the direction. Rotation changes the direction without touching the length, so meaning is never corrupted.</p>
+
+<h2>How a 4D vector actually gets rotated</h2>
+
+<p>Real embeddings are 512 or 4096 dimensions, not 2. You cannot rotate something that large in a single plane. So RoPE uses a trick: it splits the embedding into consecutive pairs of dimensions and rotates each pair independently in its own 2D plane.</p>
+
+<p>A 4D vector <code>[0.2, 0.3, 0.4, 0.5]</code> becomes two separate pairs: <code>[0.2, 0.3]</code> and <code>[0.4, 0.5]</code>. Each pair gets rotated in its own circle. A 4096D model does 2048 of these rotations in parallel.</p>
+
+<p>Each pair also spins at its own speed, determined by its frequency:</p>
+
+<pre><span class="cm"># Frequency for pair k in a d-dimensional model:</span>
+&theta;k = 1 / (10000 ^ (2k / d))
+
+<span class="cm"># Low-index pairs spin fast (high frequency) -- good at local structure</span>
+<span class="cm"># High-index pairs spin slowly -- good at long-range relationships</span></pre>
+
+<p>The actual rotation for a pair <code>[x, y]</code> at position <em>m</em> is standard 2D rotation:</p>
+
+<pre>x&#39; = x&middot;cos(&theta;&middot;m) &minus; y&middot;sin(&theta;&middot;m)
+y&#39; = x&middot;sin(&theta;&middot;m) + y&middot;cos(&theta;&middot;m)</pre>
+
+<p>Drag the slider in Fig. 2 below and watch how Pair 1 spins fast while Pair 2 barely moves. Both vectors keep the same length throughout.</p>
+
+<div class="viz">
+  <div class="viz-head">
+    <span class="viz-num">FIG. 2</span>
+    <span class="viz-title">Pair Decomposition: [0.2, 0.3, 0.4, 0.5] split and rotated</span>
+  </div>
+  <div class="viz-body">
+    <p class="viz-note">The 4D vector splits into two 2D pairs. Pair 1 (fast, &theta;=1.0) makes large jumps per position. Pair 2 (slow, &theta;=0.01) barely moves. Gray arrow is original, colored arrow is rotated. Both lengths stay identical.</p>
+    <div class="ctrl-row">
+      <label>Position m</label>
+      <input type="range" id="pairPosSlider" min="0" max="18" value="3" step="1">
+      <span class="ctrl-val" id="pairPosVal">3</span>
+    </div>
+    <canvas id="pairCanvas" height="250"></canvas>
+    <div class="stat-row">
+      <div class="stat-card" style="border-left:3px solid #c0392b">
+        <div class="stat-label">Pair 1 angle (&theta;=1.0 rad/pos)</div>
+        <div class="stat-val" id="p1ang">171.9&deg;</div>
+        <div class="stat-sub">fast rotation, captures local structure</div>
+      </div>
+      <div class="stat-card" style="border-left:3px solid #2c5f8a">
+        <div class="stat-label">Pair 2 angle (&theta;=0.01 rad/pos)</div>
+        <div class="stat-val" id="p2ang">1.719&deg;</div>
+        <div class="stat-sub">slow rotation, captures long-range patterns</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<h2>The dot product: why only the gap survives</h2>
+
+<p>Now for the part that ties it all together. After rotating Q and K, attention computes <code>Q · K.T</code> (dot product of Q with the transpose of K). Here is what actually happens to the position information when you do that.</p>
+
+<p>Think of two clock hands. The dot product between them measures how much they point in the same direction. If you rotate both hands by the same extra amount, their relative angle stays the same. The shared rotation cancels out.</p>
+
+<p>That is exactly what happens with RoPE. Say "cat" is the query at position 1 and "chased" is a key at position 3:</p>
+
+<pre>Q_rope = R(1) &middot; q_cat      <span class="cm"># rotated by position 1</span>
+K_rope = R(3) &middot; k_chased   <span class="cm"># rotated by position 3</span>
+
+score = Q_rope &middot; K_rope.T
+      = (R(1)&middot;q).T &middot; (R(3)&middot;k)
+      = q.T &middot; R(3&minus;1) &middot; k
+      = q.T &middot; <span class="hl">R(2)</span> &middot; k      <span class="cm"># only the gap (3-1=2) remains</span></pre>
+
+<p>The positions 1 and 3 cancel. The score only depends on the gap of 2. This is not a special case. When you multiply two rotation matrices together, their angles subtract. The math forces this to happen every time.</p>
+
+<p>So you can move "The dog chased the cat" from the start of a document to page 40, and every attention score stays exactly the same. The model does not care where a sentence lives in absolute terms, only how far apart the words within it are.</p>
+
+<div class="pull">
+  <em>"cat"</em> at position 1 and <em>"cat"</em> at position 100 are different vectors, but they relate to every surrounding word in <em>exactly</em> the same way.
+</div>
+
+<div class="viz">
+  <div class="viz-head">
+    <span class="viz-num">FIG. 3</span>
+    <span class="viz-title">Attention scores: only the gap between tokens matters</span>
+  </div>
+  <div class="viz-body">
+    <p class="viz-note">Click a query token (row label) to see its attention scores across all keys. The bar chart shows how attention is distributed by distance. Drag the global offset to shift the whole sentence forward and the scores do not change.</p>
+    <div class="ctrl-row">
+      <label>Global offset</label>
+      <input type="range" id="offsetSlider" min="0" max="60" value="0" step="1">
+      <span class="ctrl-val" id="offsetVal">0</span>
+      <span style="font-family:'Inter',sans-serif;font-size:11px;color:var(--ink-muted);margin-left:4px">(shift entire sentence forward)</span>
+    </div>
+    <div id="attnGrid" style="overflow-x:auto;margin:16px 0 22px"></div>
+    <p class="viz-note" style="margin-bottom:8px">Attention weight distribution for the selected query:</p>
+    <canvas id="distCanvas" height="130"></canvas>
+  </div>
+</div>
+
+<h2>Why V is not rotated</h2>
+
+<p>Attention has three components: Query, Key, and Value. Q and K play "find": their dot product decides how much each token should attend to every other. V plays "fetch": it holds the content that actually gets mixed into the output.</p>
+
+<p>Position awareness belongs in the "find" step. Once you know <em>how much</em> to attend based on the gap, you just take a weighted sum of the V vectors. V does not need to know where it is in the sequence. Rotating it would change the output with no benefit to the model.</p>
+
+<pre><span class="cm"># RoPE only touches Q and K, not V</span>
+Q = W_q &middot; x
+K = W_k &middot; x
+V = W_v &middot; x     <span class="cm"># left alone</span>
+
+Q_rope = RoPE(Q, position_m)
+K_rope = RoPE(K, position_n)
+
+scores  = Q_rope &middot; K_rope.T / sqrt(d_k)
+weights = softmax(scores)
+output  = weights &middot; V   <span class="cm"># unrotated V, weighted by position-aware scores</span></pre>
+
+<p>Everything after those two RoPE lines is identical to standard attention. No changes to the transformer architecture, no new parameters, no extra dimensions.</p>
+
+<div class="viz">
+  <div class="viz-head">
+    <span class="viz-num">FIG. 4</span>
+    <span class="viz-title">Sinusoidal PE vs RoPE: geometric comparison</span>
+  </div>
+  <div class="viz-body">
+    <canvas id="compareCanvas" height="340"></canvas>
+    <p class="viz-note" style="margin-top:10px">Left: sinusoidal PE adds a position signal directly to the word embedding, fusing content and position together. Right: RoPE rotates Q and K independently. Content lives in the vector length, position lives in the angle. The dot product sees only their angular difference.</p>
+  </div>
+</div>
+
+<div class="compare">
+  <div class="cmp-col">
+    <div class="cmp-head" style="background:var(--accent-soft);color:var(--accent)">Sinusoidal / Learned PE</div>
+    <div class="cmp-body">
+      <ul>
+        <li>Adds a position vector to the word embedding directly</li>
+        <li>Content and position get mixed into one vector</li>
+        <li>Model has to untangle them during training</li>
+        <li>Breaks on context lengths longer than training</li>
+        <li>Encodes absolute position, not relative distance</li>
+        <li>Learned PE adds one parameter vector per position</li>
+      </ul>
+    </div>
+  </div>
+  <div class="cmp-col">
+    <div class="cmp-head" style="background:var(--green-soft);color:var(--green)">RoPE</div>
+    <div class="cmp-body">
+      <ul>
+        <li>Rotates Q and K only, never the embedding itself</li>
+        <li>Length carries meaning, angle carries position</li>
+        <li>Relative distance falls out of the dot product math</li>
+        <li>No hard cap on sequence length, extensible with scaling</li>
+        <li>Relative position awareness with zero extra parameters</li>
+        <li>Works with any context length the rotation formula covers</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<h2>What about longer context windows?</h2>
+
+<p>With sinusoidal PE, position 5000 is a vector the model never saw during training (assuming you trained to 2048). The model has no idea what to do with it.</p>
+
+<p>With RoPE, position 5000 is just "rotate the vector a bit more." There is no lookup table to run out of. The formula works for any position number you give it.</p>
+
+<p>That said, RoPE by itself does not give you 128k context. Two real problems remain. First, attention costs O(n&sup2;) in compute and memory, so longer sequences get expensive fast. This is partially addressed through clever software engineering: KV Caching stores previously computed Key and Value vectors so the model does not recompute them on every new token, trading memory for speed. Flash Attention further rewrites the attention kernel to keep intermediate values in fast on-chip memory rather than writing them back to slower GPU RAM. Second, the model learned during training what certain rotation gaps mean semantically. Push the gaps far beyond what it saw and it starts to lose track.</p>
+
+<p>Techniques like YaRN (Peng et al., 2023) address the second problem by stretching the rotation frequencies, so even very large gaps still land within rotation angles the model has seen. The 128k context windows in LLaMA 3 and Mistral Large come from RoPE plus frequency scaling plus long-context fine-tuning. RoPE is the piece that makes the whole thing buildable.</p>
+
+<div class="outro">
+  <p><strong>RoPE is one improvement among many.</strong></p>
+  <p>Modern transformers perform well because of several ideas that compound on each other. RoPE handles position encoding. RMSNorm simplified layer normalization and reduced overhead. Grouped Query Attention (GQA) cut the cost of multi-head attention. KV Caching made token generation fast at scale. Flash Attention rewrote the attention kernel to handle long sequences without running out of memory.</p>
+  <p>Each of these is worth understanding on its own. RoPE is a good place to start because it shows how a simple geometric idea, when you understand it from the right angle (no pun intended), replaces something that was always a workaround.</p>
+</div>
+
+<div class="refs">
+  <div class="refs-heading">References</div>
+  <ol>
+    <li>Su, J., Lu, Y., Pan, S., Murtadha, A., Wen, B., &amp; Liu, Y. (2023). RoFormer: Enhanced transformer with rotary position embedding. <em>Neurocomputing, 568</em>, 127063. <a href="https://arxiv.org/abs/2104.09864" target="_blank">https://doi.org/10.48550/arXiv.2104.09864</a></li>
+    <li>Peng, B., Quesnelle, J., Fan, H., &amp; Shippole, E. (2023). YaRN: Efficient context window extension of large language models. <em>arXiv preprint</em>. <a href="https://arxiv.org/abs/2309.00071" target="_blank">https://doi.org/10.48550/arXiv.2309.00071</a></li>
+    <li>Vaswani, A., Shazeer, N., Parmar, N., Uszkoreit, J., Jones, L., Gomez, A. N., Kaiser, L., &amp; Polosukhin, I. (2017). Attention is all you need. <em>Advances in Neural Information Processing Systems, 30</em>. <a href="https://arxiv.org/abs/1706.03762" target="_blank">https://doi.org/10.48550/arXiv.1706.03762</a></li>
+  </ol>
+</div>
+
+</div>
+
+</div>
+
+<script>
+const THETA=0.48;
+function rot2d(x,y,a){return[x*Math.cos(a)-y*Math.sin(a),x*Math.sin(a)+y*Math.cos(a)];}
+function dot2(a,b){return a[0]*b[0]+a[1]*b[1];}
+function len2(v){return Math.sqrt(v[0]*v[0]+v[1]*v[1]);}
+function dpr(){return window.devicePixelRatio||1;}
+function setupCanvas(id,h){
+  const el=document.getElementById(id);
+  if(!el)return[null,0,0];
+  const d=dpr(),w=el.parentElement.clientWidth||600;
+  el.width=w*d;el.height=h*d;el.style.width='100%';el.style.height=h+'px';
+  const ctx=el.getContext('2d');ctx.scale(d,d);ctx.clearRect(0,0,w,h);
+  return[ctx,w,h];
+}
+function arrow(ctx,x1,y1,x2,y2,col,lw){
+  const a=Math.atan2(y2-y1,x2-x1),s=7;
+  ctx.strokeStyle=col;ctx.lineWidth=lw;
+  ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);ctx.stroke();
+  ctx.fillStyle=col;ctx.beginPath();
+  ctx.moveTo(x2,y2);
+  ctx.lineTo(x2-s*Math.cos(a-0.38),y2-s*Math.sin(a-0.38));
+  ctx.lineTo(x2-s*Math.cos(a+0.38),y2-s*Math.sin(a+0.38));
+  ctx.closePath();ctx.fill();
+}
+function polar(ctx,cx,cy,r){
+  ctx.strokeStyle='rgba(0,0,0,0.07)';ctx.lineWidth=0.5;
+  [0.35,0.7,1].forEach(f=>{ctx.beginPath();ctx.arc(cx,cy,r*f,0,Math.PI*2);ctx.stroke();});
+  for(let a=0;a<Math.PI*2;a+=Math.PI/6){ctx.beginPath();ctx.moveTo(cx,cy);ctx.lineTo(cx+r*Math.cos(a),cy+r*Math.sin(a));ctx.stroke();}
+  ctx.strokeStyle='rgba(0,0,0,0.15)';ctx.lineWidth=0.6;
+  ctx.beginPath();ctx.moveTo(cx-r-6,cy);ctx.lineTo(cx+r+6,cy);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(cx,cy-r-6);ctx.lineTo(cx,cy+r+6);ctx.stroke();
+}
+
+const W1={cat:{vec:[0.82,0.57],color:'#c0392b'},dog:{vec:[0.58,0.81],color:'#2c5f8a'},chased:{vec:[0.38,0.92],color:'#2d6a4f'},quickly:{vec:[0.94,0.34],color:'#7b4fa2'}};
+let selWord='cat';
+function drawViz1(){
+  const pos=+document.getElementById('posSlider').value;
+  document.getElementById('posVal').textContent=pos;
+  const w=W1[selWord],angle=THETA*pos;
+  const[ox,oy]=w.vec,[rx,ry]=rot2d(ox,oy,angle);
+  document.getElementById('rotAngle').textContent=(angle*180/Math.PI).toFixed(1)+'\u00b0';
+  document.getElementById('vecLen').textContent=len2([rx,ry]).toFixed(3);
+  const[ctx,W,H]=setupCanvas('rotCanvas',220);if(!ctx)return;
+  const r=82,cx=W/2,cy=H/2+8;
+  polar(ctx,cx,cy,r);
+  arrow(ctx,cx,cy,cx+ox*r,cy-oy*r,'rgba(0,0,0,0.18)',1.5);
+  if(angle>0.01){const a0=-Math.atan2(oy,ox),a1=a0-angle;ctx.strokeStyle=w.color;ctx.lineWidth=1.2;ctx.globalAlpha=0.25;ctx.setLineDash([3,3]);ctx.beginPath();ctx.arc(cx,cy,r*0.44,Math.min(a0,a1),Math.max(a0,a1));ctx.stroke();ctx.setLineDash([]);ctx.globalAlpha=1;}
+  arrow(ctx,cx,cy,cx+rx*r,cy-ry*r,w.color,2.5);
+  ctx.font='500 12px Inter,sans-serif';ctx.textAlign='center';ctx.fillStyle=w.color;
+  ctx.fillText('"'+selWord+'" at position '+pos,cx,20);
+  ctx.font='11px Inter,sans-serif';ctx.fillStyle='rgba(0,0,0,0.28)';ctx.textAlign='left';
+  ctx.fillText('original',cx+r+10,cy+4);
+  ctx.fillStyle=w.color;const lx=cx+rx*r,ly=cy-ry*r;
+  ctx.fillText('rotated',lx+(lx>cx?8:-52),ly+(ly<cy?-8:16));
+}
+document.getElementById('posSlider').addEventListener('input',drawViz1);
+document.querySelectorAll('#wordPicker .chip').forEach(c=>{
+  c.addEventListener('click',()=>{document.querySelectorAll('#wordPicker .chip').forEach(x=>x.classList.remove('active'));c.classList.add('active');selWord=c.dataset.word;drawViz1();});
+});
+
+function drawViz2(){
+  const pos=+document.getElementById('pairPosSlider').value;
+  document.getElementById('pairPosVal').textContent=pos;
+  const p1o=[0.2,0.3],p2o=[0.4,0.5];
+  const a0=1.0*pos,a1=0.01*pos;
+  const p1r=rot2d(p1o[0],p1o[1],a0),p2r=rot2d(p2o[0],p2o[1],a1);
+  document.getElementById('p1ang').textContent=(a0*180/Math.PI).toFixed(1)+'\u00b0';
+  document.getElementById('p2ang').textContent=(a1*180/Math.PI).toFixed(3)+'\u00b0';
+  const[ctx,W,H]=setupCanvas('pairCanvas',250);if(!ctx)return;
+  const r=82,cy=H/2+14,cx1=W*0.27,cx2=W*0.73;
+  [[cx1,p1o,p1r,'#c0392b','Pair 1  [0.2, 0.3]','\u03b80 = 1.0 rad/pos (fast)'],
+   [cx2,p2o,p2r,'#2c5f8a','Pair 2  [0.4, 0.5]','\u03b81 = 0.01 rad/pos (slow)']].forEach(([cx,orig,rotd,col,lbl,sub])=>{
+    polar(ctx,cx,cy,r);
+    arrow(ctx,cx,cy,cx+orig[0]*r,cy-orig[1]*r,'rgba(0,0,0,0.18)',1.5);
+    const aa=col==='#c0392b'?a0:a1;
+    if(Math.abs(aa)>0.001){const aS=-Math.atan2(orig[1],orig[0]),aE=aS-aa;ctx.strokeStyle=col;ctx.lineWidth=1;ctx.globalAlpha=0.22;ctx.setLineDash([3,3]);ctx.beginPath();ctx.arc(cx,cy,r*0.44,Math.min(aS,aE),Math.max(aS,aE));ctx.stroke();ctx.setLineDash([]);ctx.globalAlpha=1;}
+    arrow(ctx,cx,cy,cx+rotd[0]*r,cy-rotd[1]*r,col,2.5);
+    ctx.font='500 12px Inter,sans-serif';ctx.textAlign='center';ctx.fillStyle=col;ctx.fillText(lbl,cx,20);
+    ctx.font='11px Inter,sans-serif';ctx.fillStyle='rgba(0,0,0,0.35)';ctx.fillText(sub,cx,36);
+    ctx.font='10px JetBrains Mono,monospace';ctx.fillStyle='rgba(0,0,0,0.28)';ctx.fillText('|v| = '+len2(rotd).toFixed(3),cx,H-8);
+  });
+}
+document.getElementById('pairPosSlider').addEventListener('input',drawViz2);
+
+const SENT=['The','dog','chased','the','cat','very','quickly'];
+const SVECS=[[0.88,0.47],[0.58,0.81],[0.62,0.78],[0.80,0.60],[0.82,0.57],[0.71,0.70],[0.94,0.34]];
+const SCOLS=['#4a4640','#2c5f8a','#2d6a4f','#4a4640','#c0392b','#7b4fa2','#7a5c2e'];
+let selQuery=2;
+
+function ropeScore(qi,ki,off){
+  const q=rot2d(SVECS[qi][0],SVECS[qi][1],THETA*(qi+off));
+  const k=rot2d(SVECS[ki][0],SVECS[ki][1],THETA*(ki+off));
+  return dot2(q,k);
+}
+function softmax(arr){
+  const m=Math.max(...arr),e=arr.map(x=>Math.exp((x-m)*5)),s=e.reduce((a,b)=>a+b,0);
+  return e.map(x=>x/s);
+}
+function drawDist(off){
+  const scores=SENT.map((_,j)=>ropeScore(selQuery,j,off));
+  const weights=softmax(scores);
+  const[ctx,W,H]=setupCanvas('distCanvas',130);if(!ctx)return;
+  const pad={l:38,r:12,t:22,b:36},gw=W-pad.l-pad.r,gh=H-pad.t-pad.b;
+  const n=SENT.length,barW=gw/n*0.64,maxW=Math.max(...weights);
+  ctx.strokeStyle='rgba(0,0,0,0.1)';ctx.lineWidth=0.5;
+  ctx.beginPath();ctx.moveTo(pad.l,pad.t);ctx.lineTo(pad.l,pad.t+gh);ctx.lineTo(pad.l+gw,pad.t+gh);ctx.stroke();
+  [0.25,0.5,0.75,1].forEach(t=>{
+    const y=pad.t+gh*(1-t/maxW);if(y<pad.t-1)return;
+    ctx.strokeStyle='rgba(0,0,0,0.05)';ctx.lineWidth=0.5;ctx.beginPath();ctx.moveTo(pad.l,y);ctx.lineTo(pad.l+gw,y);ctx.stroke();
+    ctx.font='9px JetBrains Mono,monospace';ctx.fillStyle='rgba(0,0,0,0.28)';ctx.textAlign='right';
+    ctx.fillText((t*maxW).toFixed(2),pad.l-4,y+3);
+  });
+  weights.forEach((w,i)=>{
+    const x=pad.l+(i+0.18)*gw/n,bh=(w/maxW)*gh,y=pad.t+gh-bh;
+    const isQ=i===selQuery;
+    ctx.fillStyle=isQ?'#c0392b':Math.abs(i-selQuery)<=1?'rgba(192,57,43,0.42)':'rgba(192,57,43,0.15)';
+    ctx.beginPath();ctx.rect(x,y,barW,bh);ctx.fill();
+    ctx.font=(isQ?'500 ':'')+'10px Inter,sans-serif';ctx.fillStyle=isQ?'#c0392b':'rgba(0,0,0,0.38)';ctx.textAlign='center';
+    ctx.fillText(SENT[i],x+barW/2,pad.t+gh+16);
+    if(w>maxW*0.06){ctx.font='9px JetBrains Mono,monospace';ctx.fillStyle=isQ?'#c0392b':'rgba(0,0,0,0.35)';ctx.fillText(w.toFixed(2),x+barW/2,y-4);}
+  });
+  ctx.font='500 10px Inter,sans-serif';ctx.fillStyle='rgba(0,0,0,0.32)';ctx.textAlign='center';
+  ctx.fillText('Query: "'+SENT[selQuery]+'"',pad.l+gw/2,12);
+}
+function drawAttnGrid(){
+  const off=+document.getElementById('offsetSlider').value;
+  document.getElementById('offsetVal').textContent=off;
+  const n=SENT.length,allS=[];
+  for(let i=0;i<n;i++)for(let j=0;j<n;j++)allS.push(ropeScore(i,j,off));
+  const minS=Math.min(...allS),maxS=Math.max(...allS);
+  const cell=46,gap=2,grid=document.getElementById('attnGrid');
+  grid.innerHTML='';
+  const tbl=document.createElement('div');
+  tbl.style.cssText='display:grid;grid-template-columns:50px repeat('+n+','+cell+'px);gap:'+gap+'px;margin:0 auto;width:fit-content';
+  tbl.appendChild(Object.assign(document.createElement('div'),{style:'width:50px;height:'+cell+'px'}));
+  SENT.forEach((w,i)=>{const d=document.createElement('div');d.style.cssText='width:'+cell+'px;height:'+cell+'px;display:flex;align-items:center;justify-content:center;font-family:Inter,sans-serif;font-size:10px;font-weight:500;color:'+SCOLS[i]+';border-bottom:2px solid '+SCOLS[i];d.textContent=w;tbl.appendChild(d);});
+  for(let i=0;i<n;i++){
+    const rl=document.createElement('div');
+    rl.style.cssText='width:50px;height:'+cell+'px;display:flex;align-items:center;justify-content:center;font-family:Inter,sans-serif;font-size:10px;font-weight:'+(i===selQuery?600:400)+';color:'+SCOLS[i]+';cursor:pointer;border-right:2px solid '+(i===selQuery?SCOLS[i]:'transparent')+';text-align:center;padding-right:3px';
+    rl.textContent=SENT[i];rl.onclick=()=>{selQuery=i;drawAttnGrid();};tbl.appendChild(rl);
+    for(let j=0;j<n;j++){
+      const s=ropeScore(i,j,off),norm=(s-minS)/(maxS-minS),isQ=i===selQuery;
+      const alpha=0.05+norm*0.85;
+      const bg=isQ?'rgba(192,57,43,'+alpha+')':'rgba(100,98,92,'+(alpha*0.55)+')';
+      const d=document.createElement('div');
+      d.style.cssText='width:'+cell+'px;height:'+cell+'px;border-radius:3px;display:flex;align-items:center;justify-content:center;font-family:JetBrains Mono,monospace;font-size:9px;font-weight:500;background:'+bg+';color:'+(norm>0.6&&isQ?'white':'#2a2820')+';border:'+(isQ?'1px solid rgba(192,57,43,0.3)':'1px solid transparent');
+      d.textContent=s.toFixed(2);tbl.appendChild(d);
+    }
+  }
+  grid.appendChild(tbl);drawDist(off);
+}
+document.getElementById('offsetSlider').addEventListener('input',drawAttnGrid);
+
+function drawStaticAttn(){
+  const[ctx,W,H]=setupCanvas('attnStaticCanvas',140);if(!ctx)return;
+  const words=['The','dog','chased','the','cat','very','quickly'];
+  const cols=['#4a4640','#2c5f8a','#2d6a4f','#4a4640','#c0392b','#7b4fa2','#7a5c2e'];
+  const queryIdx=2;
+  const rawWeights=[0.18,0.72,1.0,0.22,0.68,0.14,0.20];
+  const sumW=rawWeights.reduce((a,b)=>a+b,0);
+  const weights=rawWeights.map(w=>w/sumW);
+  const n=words.length;
+  const tokenW=Math.min(76,(W-24)/n);
+  const tokenH=38, tokenY=H-tokenH-8;
+  const startX=(W-n*tokenW)/2;
+  // arcs first so tokens render on top
+  const qx=startX+queryIdx*tokenW+tokenW/2, qy=tokenY;
+  words.forEach((_,i)=>{
+    if(i===queryIdx)return;
+    const tx=startX+i*tokenW+tokenW/2;
+    const wt=weights[i];
+    const alpha=0.06+wt*0.72;
+    const lw=0.5+wt*3.5;
+    const cpY=tokenY-22-Math.abs(i-queryIdx)*16;
+    ctx.strokeStyle=`rgba(192,57,43,${alpha})`;ctx.lineWidth=lw;
+    ctx.beginPath();ctx.moveTo(qx,qy);ctx.quadraticCurveTo((qx+tx)/2,cpY,tx,qy);ctx.stroke();
+  });
+  // tokens
+  words.forEach((w,i)=>{
+    const x=startX+i*tokenW,tx=x+tokenW/2;
+    ctx.fillStyle=i===queryIdx?cols[i]:'rgba(0,0,0,0.03)';
+    ctx.strokeStyle=cols[i];ctx.lineWidth=i===queryIdx?1.5:0.5;
+    ctx.beginPath();ctx.roundRect(x+2,tokenY,tokenW-4,tokenH,5);ctx.fill();ctx.stroke();
+    ctx.font=(i===queryIdx?'500 ':'')+'11px Inter,sans-serif';
+    ctx.fillStyle=i===queryIdx?'white':cols[i];
+    ctx.textAlign='center';ctx.fillText(w,tx,tokenY+23);
+  });
+}
+
+function drawCompare(){
+  const[ctx,W,H]=setupCanvas('compareCanvas',340);if(!ctx)return;
+  const mid=W/2,lx=mid*0.5,ly=H*0.52,vr=72;
+  // LEFT: sinusoidal
+  arrow(ctx,lx,ly,lx-vr*0.52,ly+vr*0.62,'#2c5f8a',2);
+  ctx.font='11px Inter,sans-serif';ctx.textAlign='center';ctx.fillStyle='#2c5f8a';
+  ctx.fillText('word vector',lx-vr*0.52,ly+vr*0.62+15);
+  arrow(ctx,lx,ly,lx+vr*0.72,ly+vr*0.50,'#7b4fa2',2);
+  ctx.fillStyle='#7b4fa2';ctx.fillText('+ pos signal',lx+vr*0.82,ly+vr*0.50+15);
+  arrow(ctx,lx,ly,lx+vr*0.22,ly-vr*1.18,'#1a1714',3.5);
+  ctx.fillStyle='#1a1714';ctx.font='500 11px Inter,sans-serif';
+  ctx.fillText('fused embedding',lx,ly-vr*1.18-10);
+  ctx.font='600 18px Inter,sans-serif';ctx.fillStyle='rgba(0,0,0,0.18)';ctx.fillText('+',lx+vr*0.1,ly);
+  ctx.font='500 12px Inter,sans-serif';ctx.fillStyle='#c0392b';ctx.fillText('Sinusoidal PE',lx,H-28);
+  ctx.font='11px Inter,sans-serif';ctx.fillStyle='rgba(0,0,0,0.32)';
+  ctx.fillText('content + position mixed into one vector',lx,H-14);
+  // divider
+  ctx.strokeStyle='rgba(0,0,0,0.1)';ctx.lineWidth=1;ctx.setLineDash([4,4]);
+  ctx.beginPath();ctx.moveTo(mid,20);ctx.lineTo(mid,H-6);ctx.stroke();ctx.setLineDash([]);
+  // RIGHT: RoPE — same vertical origin as sinusoidal for visual balance
+  const rx=mid+mid*0.5, ry=H*0.52;
+  // Q original (faint) + rotated — points down-left after rotation
+  const qOx=rx-vr*0.72, qOy=ry+vr*0.58;
+  arrow(ctx,rx,ry,qOx,qOy,'rgba(44,95,138,0.18)',1.5);
+  const[qRx,qRy]=rot2d(qOx-rx,-(qOy-ry),0.9);
+  arrow(ctx,rx,ry,rx+qRx,ry-qRy,'#2c5f8a',2.5);
+  // Q tip ends downward — label below tip
+  ctx.fillStyle='#2c5f8a';ctx.font='11px Inter,sans-serif';ctx.textAlign='center';
+  ctx.fillText('Q rotated by pos m',rx+qRx,ry-qRy+15);
+  // K original (faint) + rotated — keep K original pointing right so rotated goes up-right
+  const kOx=rx+vr*0.80, kOy=ry-vr*0.10;
+  arrow(ctx,rx,ry,kOx,kOy,'rgba(45,106,79,0.18)',1.5);
+  const[kRx,kRy]=rot2d(kOx-rx,-(kOy-ry),2.1);
+  arrow(ctx,rx,ry,rx+kRx,ry-kRy,'#2d6a4f',2.5);
+  // K tip ends up — label to the right of tip, clear of the arrow shaft
+  ctx.fillStyle='#2d6a4f';ctx.textAlign='left';
+  ctx.fillText('K rotated by pos n',rx+kRx+10,ry-kRy+4);
+  // result bubble well above both arrow tips
+  const dpx=rx, dpy=Math.min(ry-qRy, ry-kRy)-28;
+  ctx.fillStyle='rgba(192,57,43,0.08)';ctx.strokeStyle='rgba(192,57,43,0.28)';ctx.lineWidth=1;
+  ctx.beginPath();ctx.rect(dpx-52,dpy-15,104,28);ctx.fill();ctx.stroke();
+  ctx.font='500 11px Inter,sans-serif';ctx.fillStyle='#c0392b';ctx.textAlign='center';
+  ctx.fillText('Q\u00b7K = f(gap only)',dpx,dpy+4);
+  // dashed lines from tips to bubble
+  ctx.strokeStyle='rgba(192,57,43,0.18)';ctx.lineWidth=1;ctx.setLineDash([3,3]);
+  ctx.beginPath();ctx.moveTo(rx+qRx,ry-qRy);ctx.lineTo(dpx,dpy+13);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(rx+kRx,ry-kRy);ctx.lineTo(dpx,dpy+13);ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.font='500 12px Inter,sans-serif';ctx.fillStyle='#c0392b';ctx.textAlign='center';
+  ctx.fillText('RoPE',rx,H-28);
+  ctx.font='11px Inter,sans-serif';ctx.fillStyle='rgba(0,0,0,0.32)';
+  ctx.fillText('length = content, angle = position',rx,H-14);
+  // column titles
+  ctx.font='500 11px Inter,sans-serif';ctx.fillStyle='rgba(0,0,0,0.22)';
+  ctx.fillText('position added to embedding',mid*0.5,16);
+  ctx.fillText('Q and K rotated independently',mid+mid*0.5,16);
+}
+
+function initAll(){drawStaticAttn();drawViz1();drawViz2();drawAttnGrid();drawCompare();}
+setTimeout(initAll,120);
+window.addEventListener('resize',()=>{clearTimeout(window._rt);window._rt=setTimeout(initAll,80);});
+</script>
+</body>
+</html>
